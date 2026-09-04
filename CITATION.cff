@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: >-
+  This repository analyses a public dataset. Please cite the dataset and its
+  data descriptor, listed under references, rather than this code alone.
+type: software
+title: sEMG Gesture Classifier
+abstract: >-
+  Classical machine learning compared on six-gesture surface electromyography
+  from the public GREAT dataset, across four evaluations of increasing
+  difficulty up to leave-one-subject-out.
+authors:
+  - family-names: Lee
+    given-names: Yuhyeon
+    orcid: https://orcid.org/0009-0001-9354-6445
+repository-code: https://github.com/blueion0612/sEMG_Gesture_Classifier
+license: MIT
+keywords:
+  - surface electromyography
+  - gesture recognition
+  - machine learning
+  - leave-one-subject-out
+references:
+  - type: article
+    title: EMG Dataset for Gesture Recognition with Arm Translation
+    authors:
+      - family-names: Kyranou
+        given-names: Iris
+      - family-names: Szymaniak
+        given-names: Katarzyna
+      - family-names: Nazarpour
+        given-names: Kianoush
+    journal: Scientific Data
+    volume: 12
+    year: 2025
+    doi: 10.1038/s41597-024-04296-8

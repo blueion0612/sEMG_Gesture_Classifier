@@ -1,69 +1,180 @@
 # sEMG Gesture Classifier
 
-> Classical machine-learning bake-off for six-gesture sEMG hand-gesture recognition on the
-> public [GREAT dataset](https://doi.org/10.5061/dryad.8sf7m0czv) — course-taught models,
-> boosting successors, paper-protocol reproduction, and LOSO evaluation.
-> Graduate coursework, Korea University, 2026. Full write-up in Korean below.
+Yuhyeon Lee · 2026
 
----
+[![tests](https://github.com/blueion0612/sEMG_Gesture_Classifier/actions/workflows/tests.yml/badge.svg)](https://github.com/blueion0612/sEMG_Gesture_Classifier/actions/workflows/tests.yml)
+[![License](https://img.shields.io/github/license/blueion0612/sEMG_Gesture_Classifier)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![Status](https://img.shields.io/badge/status-coursework-orange)](#limitations)
 
-# sEMG 손동작 인식 분석 코드
+[**Dataset**](docs/dataset.md) · [**Data DOI**](https://doi.org/10.5061/dryad.8sf7m0czv) · [**Source paper**](https://doi.org/10.1038/s41597-024-04296-8)
 
-표면 근전도(sEMG)로 여섯 손동작(power, lateral, pointer, tripod, open, rest)을 분류하는
-프로젝트의 분석 코드입니다. 교안에서 배운 고전 머신러닝 기법을 종합적으로 적용해 비교하고,
-부스팅의 후속 모델로 확장하며, 원논문(Kyranou 2025) 기준선을 같은 프로토콜로 재현해 비교합니다.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/hero_ladder-dark.png">
+  <img alt="Four evaluations of increasing difficulty: full-data bake-off, feature set comparison, held-out arm position, held-out participant" src="docs/figures/hero_ladder.png">
+</picture>
 
-## 파일 구성
+**sEMG Gesture Classifier** compares classical machine learning on six-gesture
+surface electromyography, using the public GREAT dataset. The point is not the
+highest number: it is what happens to that number as the evaluation stops sharing a
+user, a position and a session with the training set. Graduate coursework, 2026.
 
-| 파일 | 역할 |
-|------|------|
-| `features.py`   | GREAT 데이터 적재, 슬라이딩 윈도우, 시간영역 특징 추출(Hudgins-4 / rich-14) |
-| `models.py`     | 분류기 정의(교안 모델 + 후속 부스팅 + 소프트보팅) |
-| `eda.py`        | 탐색적 분석(클래스 분포, 채널 상관, PCA, KMeans) |
-| `evaluation.py` | 평가(종합 bake-off, 특징셋 비교, 논문 프로토콜 재현, LOSO)와 지표 |
-| `main.py`       | 전체 파이프라인 실행 엔트리포인트 |
+## Results
 
-## 실행 방법
+The pipeline recomputes everything from the recordings and writes
+`results_main.json`. Nothing is cached in the repository, so the figures below are
+what the code produces rather than numbers copied from a report.
+
+| Evaluation | What is held out | Reference point |
+|---|---|---|
+| Full-data bake-off | windows of the same trial | KNN reaches about 98% |
+| Feature sets | nothing; split and model fixed | Hudgins-4 (64) against rich-14 (224) |
+| Paper protocol, within position | trial-grouped 5-fold | the paper reports about 96% |
+| Paper protocol, across positions | the test arm position | the paper's naive transfer, 84 to 92% |
+| Leave-one-subject-out | a whole participant, 8 folds | the strictest condition here |
+
+Accuracy is reported with a 95% bootstrap confidence interval over 1000 resamples.
+Where a comparison matters, significance is a Wilcoxon signed-rank test **over the
+eight participants**, not over windows: windows from one trial are correlated, so a
+window-level test would report significance that is not there.
+
+**The trial is the unit that leaks.** Windows overlap by 78 ms, so two windows from
+one trial are nearly the same measurement. Every split here keeps a whole trial on
+one side. Without that, the bake-off number is meaningless.
+
+**Boosting is represented by its histogram implementation.** Plain
+`GradientBoosting` needs hours on the full set, so `HistGradientBoosting` stands in
+for it, and `gb_vs_histgb_equivalence` checks on a subsample of the same split that
+the two agree. The successor buys speed, not accuracy, and the repository shows that
+rather than asserting it.
+
+## Quick start
 
 ```bash
-python main.py
+pip install -r requirements.txt
+python -m semg.pipeline
 ```
 
-- 처음 실행하면 원본 데이터에서 특징을 추출해 `features_cache.npz`로 저장하고,
-  이후에는 이 캐시를 불러와 바로 실행됩니다.
-- 결과는 화면에 출력되고 `results_main.json`으로 저장됩니다.
+The first run reads the raw dataset, extracts both feature sets and caches them as
+`features_cache.npz`. Later runs load the cache and start immediately. Results are
+printed and written to `results_main.json`.
 
-## 데이터 위치
+## Method
 
-`features.py` 상단의 `DATA_DIR`이 GREAT 데이터셋(참가자 폴더들이 있는 위치)을 가리킵니다.
-기본값은 상위 폴더의 `data/extracted/data` 입니다. 데이터 위치가 다르면 이 값만 바꾸면 됩니다.
+**Windowing.** 128 ms windows, 256 samples at 2 kHz, with a 50 ms hop. That yields
+470,413 windows over the 4,800 trials. The recordings arrive already bandpassed
+between 20 and 450 Hz, so no further filtering is applied.
 
-데이터셋: Kyranou, Szymaniak & Nazarpour, *EMG Dataset for Gesture Recognition with
-Arm Translation* (Dryad: 10.5061/dryad.8sf7m0czv).
+**Two feature sets.** Hudgins-4 is mean absolute value, zero crossings, slope sign
+changes and waveform length: four per channel, 64 in total, and the baseline the
+source paper used. Rich-14 adds RMS, Willison amplitude, variance, standard
+deviation, interquartile range, mean absolute deviation, skewness, kurtosis, log
+variance and simple square integral: 224 in total.
 
-데이터 출처·다운로드 방법·파일 구조·실험 설계 등 상세 명세는 **`DATASET.md`** 를 참고하세요.
+**Counting features need a threshold.** Zero crossings, slope sign changes and
+Willison amplitude would otherwise count sensor noise. The threshold is 1% of each
+channel's own standard deviation, so it adapts per channel rather than being a
+global constant.
 
-## 실행 환경
+**Models.** Decision tree, random forest, AdaBoost, histogram gradient boosting, KNN,
+logistic regression and a perceptron, plus a soft-voting ensemble of the three whose
+errors differ most, and LDA as the paper's baseline. Hyperparameters are defaults
+with `random_state=42` throughout, not a search. Scale-sensitive models sit inside a
+pipeline with the scaler, so the scaler never sees the test fold.
 
-- Python 3.9 이상
-- 필요한 패키지: `numpy`, `pandas`, `scipy`, `scikit-learn`, `h5py`
+## Usage
+
+`python -m semg.pipeline` runs everything in order. The individual evaluations are
+importable if you want one of them:
+
+```python
+from semg.features import load_features
+from semg.evaluation import holdout_bakeoff, feature_set_comparison, paper_protocol, loso
+
+data = load_features()
+print(loso(data))
+```
+
+`DATA_DIR` at the top of `semg/features.py` points at the dataset. Change that one
+line if it lives elsewhere.
+
+## Repository layout
+
+```
+semg/
+  features.py     windowing, time-domain features, caching
+  models.py       the classifiers, the ensemble, the paper baseline
+  eda.py          class balance, channel correlation, PCA, KMeans
+  evaluation.py   the four evaluations and the metric helpers
+  pipeline.py     entry point, runs all of it and writes the results
+tests/            feature and model checks on synthetic signals
+docs/
+  dataset.md      source, licence, layout, recording protocol
+  figures/        README figure and the script that draws it
+```
+
+## Tests
+
+Ten tests on synthetic signals, so the dataset is not needed. They pin the window
+geometry to 128 ms and 50 ms, check that the two feature sets are 64 and 224 wide,
+verify that rich-14 contains the Hudgins four at their actual positions rather than
+as a prefix, confirm that the amplitude threshold suppresses sub-threshold ripple in
+the counting features, and check that every scale-sensitive model is wrapped with a
+scaler.
 
 ```bash
-pip install numpy pandas scipy scikit-learn h5py
+pytest -q                       # if pytest is installed
+python tests/test_features.py   # works without it
 ```
 
-## 재현 범위
+## Data
 
-`python main.py`는 핵심 in-scope 파이프라인(탐색적 분석, 전체데이터 bake-off, 특징셋 비교,
-GradientBoosting↔HistGradientBoosting 동등성, 논문 프로토콜 재현, LOSO)을 처음부터 다시 계산해
-`results_main.json`으로 저장합니다. 표 2의 전체데이터 bake-off 수치(예: KNN 약 98.0%) 같은 핵심 결과가 여기서 재현됩니다.
+The GREAT dataset is on Dryad under CC0 at
+[10.5061/dryad.8sf7m0czv](https://doi.org/10.5061/dryad.8sf7m0czv): 8 participants,
+16 channels at 2 kHz, six gestures across nine arm positions, 4,800 trials.
+[`docs/dataset.md`](docs/dataset.md) covers where to get it, how the folders are
+named, what the gesture codes mean and how it was recorded.
 
-보고서 본문의 일부 확장 표·그림은 같은 방법론을 적용한 별도 실험에서 나왔습니다. 전체데이터 표준 GradientBoosting의
-학습 시간 벤치마크(약 6.7시간), 피험자별 정규화 사다리(enhanced LOSO), XGBoost 후속 계열 비교(표 5의 일부 행),
-RandomForest 채널 특징중요도(그림 9)가 그 예입니다. 이 수치들은 보고서와 함께 제출한 `results.json`에 정리돼 있습니다.
-즉 `results_main.json`은 이 코드의 산출물이고, `results.json`은 보고서 전체를 구동하는 전체 실험 결과로 서로 구분됩니다.
+Only `emg_data.hdf5` and `trials.csv` are read. The glove and finger recordings are
+ignored.
 
-## AI 활용 고지
+## Limitations
 
-본 코드와 보고서 작성에 생성형 AI(Claude, Anthropic)를 코드 초안·디버깅 보조와 문서 정리에
-보조 도구로 사용했습니다. 주제·방법 선정, 실험 설계, 모든 수치의 직접 실행·확인은 저자가 수행했습니다.
+- **Eight participants, all healthy adult males, right hand.** Nothing here says
+  anything about anyone else.
+- **Position transfer is the failure case**, and the dataset is built to expose it:
+  only the centre position is shared between the two days.
+- **No hyperparameter search.** Defaults throughout, so a tuned model would likely
+  beat these numbers and the comparison between models is the point rather than any
+  single value.
+- **The report that accompanied this code contains extended tables** that a separate
+  run produced, including a training-time benchmark and a subject-wise normalisation
+  ladder. Those are not reproduced by `semg.pipeline` and are not in this
+  repository.
+
+## Citation
+
+Cite the dataset and its paper, not this repository:
+
+```bibtex
+@article{kyranou2025great,
+  author  = {Kyranou, Iris and Szymaniak, Katarzyna and Nazarpour, Kianoush},
+  title   = {{EMG} Dataset for Gesture Recognition with Arm Translation},
+  journal = {Scientific Data},
+  volume  = {12},
+  pages   = {100},
+  year    = {2025},
+  doi     = {10.1038/s41597-024-04296-8}
+}
+```
+
+## Generative AI
+
+Generative AI (Claude, Anthropic) was used as an assistant while writing this code
+and the accompanying report: for drafting code, for help with debugging, and for
+tidying documentation. The choice of topic and method, the experimental design, and
+the running and checking of every number were done by the author.
+
+## License
+
+MIT. See [LICENSE](LICENSE). The dataset carries its own licence, CC0 1.0.

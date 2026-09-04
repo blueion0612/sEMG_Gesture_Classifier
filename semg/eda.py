@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
-"""지도학습 전에 데이터 구조를 본다. 클래스 분포와 균형도, 채널 간 상관(다채널이 중복인지),
-PCA로 정보가 소수 축에 몰렸는지, KMeans로 손동작이 비지도로 갈라지는지(실루엣과 엘보 SSE,
-라벨 일치도 ARI)를 확인한다. 비지도 기법은 표준화한 rich 특징 위에서 돌린다."""
+"""Look at the data before fitting anything to it.
+
+Reports the class balance, how correlated the channels are with each other,
+whether PCA concentrates the variance in a few axes, and whether KMeans
+separates the gestures without labels, judged by silhouette, the elbow in the
+sum of squares, and agreement with the true labels. The unsupervised parts run
+on standardised rich features."""
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score, adjusted_rand_score
 
-from features import GRASP_NAMES
+from .features import GRASP_NAMES
 
-RICH_PER = 14   # 채널당 rich 특징 수 (채널 c의 MAV = 열 c*14)
+RICH_PER = 14   # rich features per channel; the MAV of channel c is column c*14
 
 
 def _counts(arr):
@@ -19,7 +23,7 @@ def _counts(arr):
 
 
 def run_eda(data, sample_size=40000, seed=42):
-    """분포, 채널 상관, PCA, KMeans 지표를 한 번에 계산해 딕셔너리로 돌려준다."""
+    """Compute the distribution, correlation, PCA and KMeans figures in one pass."""
     Xr = data["Xrich"].astype(np.float64)
     y = data["y_grasp"]
     rng = np.random.RandomState(seed)
@@ -33,14 +37,14 @@ def run_eda(data, sample_size=40000, seed=42):
     g = list(eda["windows_per_grasp"].values())
     eda["grasp_imbalance_ratio"] = round(max(g) / min(g), 2)
 
-    # 채널 간 상관은 채널별 MAV(16개)로 계산
+    # Channel correlation is computed on the 16 per-channel MAV columns
     mav = Xr[:, [c * RICH_PER for c in range(16)]]
     corr = np.corrcoef(mav.T)
     offdiag = corr[np.triu_indices(16, k=1)]
     eda["channel_corr_mean_abs"] = round(float(np.mean(np.abs(offdiag))), 3)
     eda["channel_corr_max"] = round(float(np.max(offdiag)), 3)
 
-    # 속도를 위해 표본을 뽑아 표준화 후 PCA, KMeans
+    # Subsample, standardise, then PCA and KMeans, which keeps this quick
     samp = rng.choice(len(y), min(sample_size, len(y)), replace=False)
     Xs = StandardScaler().fit_transform(Xr[samp])
     ys = y[samp]
@@ -51,14 +55,14 @@ def run_eda(data, sample_size=40000, seed=42):
     eda["pca_n_components_90"] = int(np.searchsorted(cum, 0.90) + 1)
     eda["pca_n_components_95"] = int(np.searchsorted(cum, 0.95) + 1)
 
-    # KMeans: 실루엣과 엘보(SSE) 두 방식으로 K를 보고, 손동작 6종 라벨과의 일치도(ARI)도 본다
+    # Choose K by silhouette and by the elbow in SSE, and score agreement with the six labels
     Z = pca.transform(Xs)[:, :10]
     sil, sse = {}, {}
     for k in (2, 3, 4, 5, 6):
         km = KMeans(n_clusters=k, n_init=10, random_state=42).fit(Z)
         sil[k] = round(float(silhouette_score(Z, km.labels_, sample_size=5000,
                                               random_state=42)), 3)
-        sse[k] = round(float(km.inertia_), 1)   # 엘보용 군집 내 제곱합(관성)
+        sse[k] = round(float(km.inertia_), 1)   # within-cluster sum of squares, for the elbow
     eda["kmeans_silhouette"] = sil
     eda["kmeans_sse_elbow"] = sse
     eda["kmeans_best_k"] = max(sil, key=sil.get)
@@ -69,11 +73,12 @@ def run_eda(data, sample_size=40000, seed=42):
 
 
 def print_eda(eda):
-    """run_eda 결과를 콘솔에 요약 출력."""
-    print(f"  윈도우 {eda['n_windows']:,}개, 손동작 균형비 {eda['grasp_imbalance_ratio']}:1")
-    print(f"  채널 상관 평균|r| {eda['channel_corr_mean_abs']}, 최대 {eda['channel_corr_max']}")
-    print(f"  PCA 상위2성분 {eda['pca_var_top2']*100:.0f}% / 90%에 {eda['pca_n_components_90']}성분 "
-          f"/ 95%에 {eda['pca_n_components_95']}성분")
-    print(f"  KMeans 실루엣 최적 K={eda['kmeans_best_k']} "
-          f"({eda['kmeans_silhouette'][eda['kmeans_best_k']]}), 손동작 일치도 ARI {eda['kmeans_ari_vs_grasp']}")
-    print("  비지도로는 손동작이 잘 갈라지지 않아 지도학습이 필요하다")
+    """Print the run_eda result."""
+    print(f"  {eda['n_windows']:,} windows, class imbalance {eda['grasp_imbalance_ratio']}:1")
+    print(f"  channel correlation mean |r| {eda['channel_corr_mean_abs']}, max {eda['channel_corr_max']}")
+    print(f"  PCA: top two components {eda['pca_var_top2']*100:.0f}%, "
+          f"{eda['pca_n_components_90']} components for 90% "
+          f"and {eda['pca_n_components_95']} for 95%")
+    print(f"  KMeans: best K by silhouette = {eda['kmeans_best_k']} "
+          f"({eda['kmeans_silhouette'][eda['kmeans_best_k']]}), ARI against the labels {eda['kmeans_ari_vs_grasp']}")
+    print("  the gestures do not separate without labels, so supervision is needed")

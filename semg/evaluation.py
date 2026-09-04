@@ -1,24 +1,28 @@
 # -*- coding: utf-8 -*-
-"""모델 평가 네 가지를 수행한다.
-holdout_bakeoff는 전체데이터 종합 비교(같은 사용자·위치 내, 시행-그룹 홀드아웃),
-feature_set_comparison은 Hudgins-4 대 rich-14 특징공학 효과(같은 분할),
-paper_protocol은 원논문 프로토콜 재현(같은 위치/위치 전이, 분류기를 고정하고 특징만 확장),
-loso는 미지 사용자 일반화와 피험자 단위 유의성을 본다.
-누수 방지를 위해 같은 시행의 윈도우는 항상 학습이나 평가 한쪽에만 두고,
-위치/사용자 일반화에서는 평가 대상 위치/사용자를 학습에서 완전히 뺀다."""
+"""Four evaluations, from the easiest condition to the hardest.
+
+holdout_bakeoff compares every model within one user and one arm position,
+splitting by trial. feature_set_comparison isolates the effect of the feature
+set by holding the split and the model fixed. paper_protocol reproduces the two
+protocols of the source paper, fixing the classifier and extending only the
+features. loso holds out a whole participant.
+
+Every window of a trial always lands on one side of a split, and for the
+position and user conditions the held-out position or participant is absent
+from training entirely."""
 import numpy as np
 from scipy import stats
 from sklearn.base import clone
 from sklearn.model_selection import GroupShuffleSplit, GroupKFold
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 
-from features import GRASP_NAMES
-from models import taught_models, soft_voting_ensemble, lda, real_gradient_boosting
+from .features import GRASP_NAMES
+from .models import taught_models, soft_voting_ensemble, lda, real_gradient_boosting
 
 
-# 지표 도우미
+# Metric helpers
 def bootstrap_ci(y_true, y_pred, n=1000, seed=0):
-    """정확도의 95% 부트스트랩 신뢰구간."""
+    """95% bootstrap confidence interval for accuracy."""
     rng = np.random.RandomState(seed)
     yt, yp = np.asarray(y_true), np.asarray(y_pred)
     accs = [np.mean(yt[b] == yp[b]) for b in (rng.randint(0, len(yt), len(yt)) for _ in range(n))]
@@ -26,7 +30,7 @@ def bootstrap_ci(y_true, y_pred, n=1000, seed=0):
 
 
 def _cap_per_trial(idx, trial, cap, rng):
-    """시행당 윈도우 수를 cap개로 제한(대규모 평가의 계산량 절감). cap=None이면 전체."""
+    """Keep at most cap windows per trial, which bounds the cost of the large runs."""
     if cap is None:
         return idx
     keep = []
@@ -36,9 +40,9 @@ def _cap_per_trial(idx, trial, cap, rng):
     return np.array(sorted(keep))
 
 
-# 1) 전체데이터 종합 bake-off
+# 1) Full-data bake-off
 def holdout_bakeoff(data):
-    """전체 47만 윈도우를 시행 단위로 80:20 분할해 모든 교안 모델 + 앙상블을 비교."""
+    """Split all 470k windows 80:20 by trial and compare every model plus the ensemble."""
     X, y, trial = data["Xrich"], data["y_grasp"], data["g_trial"]
     tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
                   .split(X, y, trial))
@@ -63,10 +67,10 @@ def holdout_bakeoff(data):
     return out
 
 
-# 2) 특징셋 비교 (Hudgins-4 vs rich-14)
+# 2) Feature set comparison, Hudgins-4 against rich-14
 def feature_set_comparison(data, cap=12, seed=0):
-    """동일 시행-그룹 홀드아웃에서 Hudgins-4(64) 대 rich-14(224)의 정확도를 비교.
-    분할·모델을 고정하고 특징만 바꿔, 특징공학의 순수 효과를 본다."""
+    """Compare Hudgins-4 (64) with rich-14 (224) on the same trial-grouped holdout.
+    The split and the model are fixed, so the difference is the feature set alone."""
     y, trial = data["y_grasp"], data["g_trial"]
     rng = np.random.RandomState(seed)
     idx = _cap_per_trial(np.arange(len(y)), trial, cap, rng)
@@ -85,11 +89,11 @@ def feature_set_comparison(data, cap=12, seed=0):
     return out
 
 
-# 2-b) 후속 모델 동등성 (GradientBoosting ≈ HistGradientBoosting)
+# 2b) The histogram implementation matches plain GradientBoosting
 def gb_vs_histgb_equivalence(data, sample=12000, seed=42):
-    """원래 GradientBoosting과 후속 HistGradientBoosting의 정확도가 사실상 같음을 확인.
-    원 GB는 전체 데이터 학습이 매우 느려(수 시간) 표본을 뽑아 같은 분할에서 빠르게 비교한다.
-    후속 모델의 이점은 정확도가 아니라 속도임을 보이는 통제 실험(보고서 §8)."""
+    """Show that plain and histogram gradient boosting reach the same accuracy.
+    Plain GB needs hours on the full set, so the comparison runs on a subsample of
+    the same split. The point is that the successor buys speed, not accuracy."""
     X, y, trial = data["Xrich"], data["y_grasp"], data["g_trial"]
     rng = np.random.RandomState(seed)
     idx = rng.choice(len(y), min(sample, len(y)), replace=False)
@@ -105,22 +109,22 @@ def gb_vs_histgb_equivalence(data, sample=12000, seed=42):
     return out
 
 
-# 3) 원논문 프로토콜 재현·비교
+# 3) Reproduction of the source paper's protocols
 def paper_protocol(data):
-    """원논문과 동일한 두 프로토콜에서, 분류기를 LDA로 고정하고 특징만 확장해 비교.
-      within : 같은 위치 안에서 시행-그룹 5-fold (논문 ~96% 재현)
-      cross  : 한 위치에서 학습 후 같은 날 다른 위치에서 평가 (논문 naive transfer, 84–92%)
-    cross에서는 피험자 단위 정확도로 Wilcoxon 유의성도 계산한다."""
+    """Run the paper's two protocols with its classifier, changing only the features.
+      within: trial-grouped 5-fold inside one arm position; the paper reports about 96%
+      cross:  train at one position, test at another on the same day; the paper's
+              naive transfer, 84 to 92%. Significance is Wilcoxon over participants."""
     Xh, Xr = data["Xhud"], data["Xrich"]
     y, part, pos, day = data["y_grasp"], data["g_part"], data["g_pos"], data["g_day"]
     trial = data["g_trial"]
 
-    # 비교 모델: LDA(논문 분류기)에 특징만 hud/rich로 바꿔 본다
+    # The classifier stays LDA, as in the paper; only the feature set changes
     def fit_pred(feat, model, tr, te):
         X = Xh if feat == "hud" else Xr
         return clone(model).fit(X[tr], y[tr]).predict(X[te])
 
-    # within-position: (피험자,일,위치) 셀마다 시행-그룹 5-fold
+    # within position: trial-grouped 5-fold in each (participant, day, position) cell
     within = {"LDA+Hudgins": [], "LDA+rich": []}
     for p in np.unique(part):
         for d in (1, 2):
@@ -135,7 +139,7 @@ def paper_protocol(data):
                     within[key].append(np.mean(accs))
     within = {k: round(float(np.mean(v)), 4) for k, v in within.items()}
 
-    # cross-position: 한 위치 학습, 다른 위치 평가 (피험자별 평균)
+    # cross position: train at one position, test at another, averaged per participant
     per_subject = {"LDA+Hudgins": [], "LDA+rich": []}
     for p in np.unique(part):
         acc = {"LDA+Hudgins": [], "LDA+rich": []}
@@ -167,10 +171,11 @@ def paper_protocol(data):
     return {"within_position": within, "cross_position": cross}
 
 
-# 4) 미지 사용자(LOSO) 일반화
+# 4) Leave-one-subject-out generalisation
 def loso(data, cap=5, seed=13):
-    """피험자 한 명을 빼고 학습한 뒤 그 피험자로 평가한다(8겹). 가장 엄격한 일반화 지표다.
-    모델별 정확도/CI와, 후속 모델 대 논문 기준선의 피험자 단위 Wilcoxon 유의성을 반환한다."""
+    """Hold out one participant, train on the rest, test on them. Eight folds.
+    Returns accuracy and a confidence interval per model, and the Wilcoxon test
+    over participants comparing the successor with the paper's baseline."""
     Xh, Xr = data["Xhud"], data["Xrich"]
     y, part, trial = data["y_grasp"], data["g_part"], data["g_trial"]
     rng = np.random.RandomState(seed)
@@ -179,13 +184,13 @@ def loso(data, cap=5, seed=13):
         "LDA+Hudgins": ("hud", lda()),
         "LDA+rich": ("rich", lda()),
         "RandomForest": ("rich", taught_models()["RandomForest"]),
-        # 교안 GradientBoosting의 빠른 구현(보고서 표7의 LOSO 부스팅 행에 해당)
+        # the fast implementation standing in for the course's GradientBoosting
         "HistGradientBoosting": ("rich", taught_models()["HistGradientBoosting"]),
         "KNN": ("rich", taught_models()["KNN"]),
         "LogReg": ("rich", taught_models()["LogisticRegression"]),
     }
     preds = {k: [] for k in models}
-    per_subj = {"LDA+Hudgins": [], "HistGradientBoosting": []}   # 유의성용
+    per_subj = {"LDA+Hudgins": [], "HistGradientBoosting": []}   # kept for the significance test
     truth = []
 
     for s in np.unique(part):
@@ -213,6 +218,6 @@ def loso(data, cap=5, seed=13):
         "HistGradientBoosting_vs_LDA+Hudgins_gain_pp": round(float((gb.mean() - hud.mean()) * 100), 2),
         "n_subjects_improved": int(np.sum(gb > hud)),
         "wilcoxon_p": round(float(wp), 4),
-        "note": "유의성 단위는 피험자(n=8). 윈도우 단위 검정은 표본 간 상관으로 과대평가됨",
+        "note": "significance is over participants (n=8); a window-level test would be inflated by correlation between windows",
     }
     return out

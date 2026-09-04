@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
-"""GREAT sEMG 데이터(참가자 8명, 2일 2세션, 16채널 2kHz)를 윈도우로 자르고 시간영역 특징을 뽑는다.
-특징은 두 벌이다. Hudgins 4특징(MAV/ZC/SSC/WL, 채널당 4개=64개)은 원논문 기준선 재현용,
-rich 14특징(여기에 통계 10개 추가, 채널당 14개=224개)은 분석용이다. 추출 결과는 .npz로 캐시한다."""
+"""Window the GREAT sEMG recordings and extract time-domain features.
+
+The dataset is 8 participants, two days of two sessions each, 16 channels at
+2 kHz. Two feature sets are produced. Hudgins-4 (MAV, ZC, SSC, WL; 4 per
+channel, 64 total) reproduces the baseline of the source paper. Rich-14 adds
+ten statistics per channel (224 total) and is what the analysis uses. The
+result is cached as an .npz so the extraction runs once."""
 import glob
 import time
 from pathlib import Path
@@ -9,25 +13,26 @@ from pathlib import Path
 import numpy as np
 from scipy import stats
 from numpy.lib.stride_tricks import sliding_window_view
-# pandas, h5py는 원시 데이터 추출 시에만 쓰므로 load_features 안에서 불러온다
-# (캐시만 있으면 두 패키지 없이도 실행된다).
+# pandas and h5py are only needed to read the raw dataset, so they are imported
+# inside load_features: with the cache present, neither package is required.
 
 BASE = Path(__file__).resolve().parent
-DATA_DIR = BASE.parent / "data" / "extracted" / "data"   # 참가자 폴더들이 있는 위치
+DATA_DIR = BASE.parent / "data" / "extracted" / "data"   # directory holding the participant folders
 CACHE = BASE / "features_cache.npz"
 
-FS = 2000          # 표본화율 (Hz)
-WIN = 256          # 윈도우 길이 = 128ms
-STRIDE = 100       # 윈도우 간격 = 50ms
+FS = 2000          # sampling rate (Hz)
+WIN = 256          # window length, 128 ms
+STRIDE = 100       # hop between windows, 50 ms
 
-# 코드→이름 매핑은 데이터셋 저자 저장소(MoveR_AT_GREAT) README 기준 (3=tripod, 4=pointer)
+# Code to name mapping follows the dataset authors' own repository, MoveR_AT_GREAT (3=tripod, 4=pointer)
 GRASP_NAMES = {1: "power", 2: "lateral", 3: "tripod",
                4: "pointer", 5: "open", 6: "rest"}
 
 
-# 시간영역 특징. W는 (채널, 윈도우수, 길이) 묶음이고, thr는 채널별 진폭 임계값(ZC/SSC/WAMP의 잡음 제거용).
+# Time-domain features. W is (channel, window, length); thr is a per-channel amplitude
+# threshold that keeps sensor noise out of the ZC, SSC and WAMP counts.
 def _zero_crossings(W, thr):
-    """영점 교차(ZC): 신호 부호가 바뀌는 횟수."""
+    """Zero crossings: how often the signal changes sign."""
     sign = np.sign(W)
     sign[sign == 0] = -1
     crossed = np.diff(sign, axis=2) != 0
@@ -36,7 +41,7 @@ def _zero_crossings(W, thr):
 
 
 def _slope_sign_changes(W, thr):
-    """기울기 부호 변화(SSC): 1차 차분의 부호가 바뀌는 횟수."""
+    """Slope sign changes: how often the first difference changes sign."""
     d = np.diff(W, axis=2)
     sign = np.sign(d)
     sign[sign == 0] = -1
@@ -48,15 +53,15 @@ def _slope_sign_changes(W, thr):
 
 
 def _willison_amplitude(W, thr):
-    """WAMP: 인접 표본 차이가 임계값을 넘는 횟수."""
+    """Willison amplitude: how often adjacent samples differ by more than the threshold."""
     return np.sum(np.abs(np.diff(W, axis=2)) >= thr[:, None, None], axis=2)
 
 
 def extract_features(W, thr, rich=True):
-    """윈도우 묶음에서 특징을 뽑아 (윈도우수, 채널×특징) 행렬로 반환.
+    """Extract features from a batch of windows as a (window, channel x feature) matrix.
 
-    rich=False면 Hudgins 4특징, rich=True면 확장 14특징.
-    채널별 특징을 [채널0의 특징들, 채널1의 특징들, ...] 순으로 펼친다.
+    rich=False gives the Hudgins 4; rich=True gives the extended 14.
+    Channels are laid out consecutively: all of channel 0, then all of channel 1.
     """
     C, N, _ = W.shape
     diff = np.diff(W, axis=2)
@@ -67,7 +72,7 @@ def extract_features(W, thr, rich=True):
     ssc = _slope_sign_changes(W, thr).astype(np.float64)
 
     if not rich:
-        feats = [mav, zc, ssc, wl]   # Hudgins 4특징
+        feats = [mav, zc, ssc, wl]   # the Hudgins 4
     else:
         rms = np.sqrt(np.mean(W ** 2, axis=2))
         wamp = _willison_amplitude(W, thr).astype(np.float64)
@@ -79,19 +84,19 @@ def extract_features(W, thr, rich=True):
         mad = np.mean(np.abs(W - mean[:, :, None]), axis=2)
         skew = np.nan_to_num(stats.skew(W, axis=2))
         kurt = np.nan_to_num(stats.kurtosis(W, axis=2))
-        log_var = np.log(var + 1e-12)   # +1e-12: var=0일 때 log 발산 방지
+        log_var = np.log(var + 1e-12)   # the epsilon keeps log finite when a window is constant
         ssi = np.sum(W ** 2, axis=2)
         feats = [mav, rms, wl, zc, ssc, wamp, var, std,
                  iqr, mad, skew, kurt, log_var, ssi]
 
-    arr = np.stack(feats, axis=2)            # (채널, 윈도우, 특징)
-    arr = np.transpose(arr, (1, 0, 2))       # (윈도우, 채널, 특징)
+    arr = np.stack(feats, axis=2)            # (channel, window, feature)
+    arr = np.transpose(arr, (1, 0, 2))       # (window, channel, feature)
     return arr.reshape(N, C * len(feats))
 
 
-# 데이터 적재
+# Loading
 def list_blocks():
-    """참가자/일자/세션별 측정 블록 목록을 만든다."""
+    """List the recording blocks, one per participant, day and session."""
     blocks = []
     for p in range(1, 9):
         for path in sorted(glob.glob(str(DATA_DIR / f"participant_{p}" / "*"))):
@@ -102,20 +107,21 @@ def list_blocks():
 
 
 def load_features(use_cache=True):
-    """전체 데이터를 윈도우로 자르고 특징을 추출해 딕셔너리로 반환.
+    """Window the whole dataset, extract both feature sets, and return them.
 
-    반환 키:
-      Xhud (윈도우, 64)  Hudgins 특징
-      Xrich(윈도우, 224) rich 특징
-      y_grasp / g_part / g_pos / g_day / g_trial  : 라벨과 그룹 키
-    누수 방지를 위해 시행(g_trial)·위치(g_pos)·피험자(g_part)를 그룹 키로 함께 저장한다.
+    Keys:
+      Xhud  (window, 64)   Hudgins features
+      Xrich (window, 224)  rich features
+      y_grasp, g_part, g_pos, g_day, g_trial: labels and grouping keys
+    Trial, position and participant are stored alongside so that an evaluation can
+    keep every window of one trial on a single side of a split.
     """
     if use_cache and CACHE.exists():
         z = np.load(CACHE, allow_pickle=True)
-        print(f"[캐시] {CACHE.name} 불러옴: Xrich {z['Xrich'].shape}")
+        print(f"[cache] loaded {CACHE.name}: Xrich {z['Xrich'].shape}")
         return {k: z[k] for k in z.files}
 
-    import pandas as pd   # 원시 데이터 추출 시에만 필요
+    import pandas as pd   # only needed when reading the raw dataset
     import h5py
     Xhud, Xrich = [], []
     y_grasp, g_part, g_pos, g_day, g_trial = [], [], [], [], []
@@ -129,10 +135,10 @@ def load_features(use_cache=True):
                 key = str(int(row["row_number"]))
                 if key not in h:
                     continue
-                sig = h[key][:].astype(np.float64)        # (16, 시간)
+                sig = h[key][:].astype(np.float64)        # (16, time)
                 if sig.shape[1] < WIN:
                     continue
-                # 채널별 임계값 = 채널 표준편차의 1% (잡음 무시용)
+                # Per-channel threshold: 1% of that channel's standard deviation
                 thr = 0.01 * np.std(sig, axis=1)
                 thr = np.where(thr <= 0, 1e-9, thr)
                 win = sliding_window_view(sig, WIN, axis=1)[:, ::STRIDE, :]
@@ -147,7 +153,7 @@ def load_features(use_cache=True):
                 g_day.append(np.full(N, b["day"], np.int16))
                 g_trial.append(np.full(N, trial_id, np.int32))
                 trial_id += 1
-        print(f"  블록 {bi+1}/32 처리 ({time.time()-t0:.0f}s)")
+        print(f"  block {bi+1}/32 done ({time.time()-t0:.0f}s)")
 
     data = {
         "Xhud": np.concatenate(Xhud).astype(np.float32),
@@ -159,5 +165,5 @@ def load_features(use_cache=True):
         "g_trial": np.concatenate(g_trial),
     }
     np.savez_compressed(CACHE, **data)
-    print(f"[캐시] 저장: 총 {len(data['y_grasp']):,}개 윈도우 ({time.time()-t0:.0f}s)")
+    print(f"[cache] saved {len(data['y_grasp']):,} windows ({time.time()-t0:.0f}s)")
     return data
