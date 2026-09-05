@@ -173,7 +173,7 @@ ignored.
 
 ## Related
 
-- [PPG_Classifier](https://github.com/blueion0612/PPG_Classifier) and
+- [PPG_Fist_Classifier](https://github.com/blueion0612/PPG_Fist_Classifier) and
   [IMU_Gesture_Classifier](https://github.com/blueion0612/IMU_Gesture_Classifier):
   the same question, hand state from a wrist signal, asked of photoplethysmography
   and of inertial data. All three keep whole trials or sessions on one side of every
