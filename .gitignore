@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 features_cache.npz
 results_main.json
+
+# build metadata written by pip install -e .
+*.egg-info/
