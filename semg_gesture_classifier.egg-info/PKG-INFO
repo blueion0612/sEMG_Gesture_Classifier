@@ -1,26 +1,36 @@
-<div align="center">
+Metadata-Version: 2.4
+Name: semg-gesture-classifier
+Version: 1.0.0
+Summary: Classical machine learning compared on six-gesture surface electromyography, up to leave-one-subject-out
+Author: Yuhyeon Lee
+License-Expression: MIT
+Project-URL: Repository, https://github.com/blueion0612/sEMG_Gesture_Classifier
+Project-URL: Portfolio, https://blueion0612.github.io
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.21
+Requires-Dist: scipy>=1.7
+Requires-Dist: scikit-learn>=1.0
+Requires-Dist: pandas>=1.3
+Requires-Dist: h5py>=3.0
+Dynamic: license-file
 
 # sEMG Gesture Classifier
 
 Yuhyeon Lee · 2026
 
-[![tests](https://img.shields.io/github/actions/workflow/status/blueion0612/sEMG_Gesture_Classifier/tests.yml?branch=main&label=tests)](https://github.com/blueion0612/sEMG_Gesture_Classifier/actions/workflows/tests.yml)
+[![tests](https://github.com/blueion0612/sEMG_Gesture_Classifier/actions/workflows/tests.yml/badge.svg)](https://github.com/blueion0612/sEMG_Gesture_Classifier/actions/workflows/tests.yml)
 [![License](https://img.shields.io/github/license/blueion0612/sEMG_Gesture_Classifier)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-coursework-orange)](#limitations)
 
-[**Dataset**](docs/dataset.md) · [**Data DOI**](https://doi.org/10.5061/dryad.8sf7m0czv) · [**Source paper**](https://doi.org/10.1038/s41597-024-04296-8) · [**Related**](#related)
+[**Dataset**](docs/dataset.md) · [**Data DOI**](https://doi.org/10.5061/dryad.8sf7m0czv) · [**Source paper**](https://doi.org/10.1038/s41597-024-04296-8)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/hero_ladder-dark.png">
   <img alt="Four evaluations of increasing difficulty: full-data bake-off, feature set comparison, held-out arm position, held-out participant" src="docs/figures/hero_ladder.png">
 </picture>
-
-</div>
-
-*The four evaluations, easiest at the top. Each rung holds out more of what the
-training set shares with the test set. The hero is the structure and not a result
-because no numbers are committed here; `semg.pipeline` writes them.*
 
 **sEMG Gesture Classifier** compares classical machine learning on six-gesture
 surface electromyography, using the public GREAT dataset. The point is not the
@@ -59,10 +69,8 @@ rather than asserting it.
 ## Quick start
 
 ```bash
-git clone https://github.com/blueion0612/sEMG_Gesture_Classifier
-cd sEMG_Gesture_Classifier
-pip install -e .
-python -m semg.pipeline        # also installed as the semg-pipeline command
+pip install -r requirements.txt
+python -m semg.pipeline
 ```
 
 The first run reads the raw dataset, extracts both feature sets and caches them as
@@ -71,30 +79,22 @@ printed and written to `results_main.json`.
 
 ## Method
 
-### Windowing
-
-128 ms windows, 256 samples at 2 kHz, with a 50 ms hop. That yields
+**Windowing.** 128 ms windows, 256 samples at 2 kHz, with a 50 ms hop. That yields
 470,413 windows over the 4,800 trials. The recordings arrive already bandpassed
 between 20 and 450 Hz, so no further filtering is applied.
 
-### Two feature sets
-
-Hudgins-4 is mean absolute value, zero crossings, slope sign
+**Two feature sets.** Hudgins-4 is mean absolute value, zero crossings, slope sign
 changes and waveform length: four per channel, 64 in total, and the baseline the
 source paper used. Rich-14 adds RMS, Willison amplitude, variance, standard
 deviation, interquartile range, mean absolute deviation, skewness, kurtosis, log
 variance and simple square integral: 224 in total.
 
-### Counting features need a threshold
-
-Zero crossings, slope sign changes and
+**Counting features need a threshold.** Zero crossings, slope sign changes and
 Willison amplitude would otherwise count sensor noise. The threshold is 1% of each
 channel's own standard deviation, so it adapts per channel rather than being a
 global constant.
 
-### Models
-
-Decision tree, random forest, AdaBoost, histogram gradient boosting, KNN,
+**Models.** Decision tree, random forest, AdaBoost, histogram gradient boosting, KNN,
 logistic regression and a perceptron, plus a soft-voting ensemble of the three whose
 errors differ most, and LDA as the paper's baseline. Hyperparameters are defaults
 with `random_state=42` throughout, not a search. Scale-sensitive models sit inside a
@@ -127,9 +127,8 @@ semg/
   pipeline.py     entry point, runs all of it and writes the results
 tests/            feature and model checks on synthetic signals
 docs/
-  dataset.md      source, license, layout, recording protocol
-  figures/        README figure, the script that draws it, figstyle.py
-pyproject.toml    package definition, dependencies, the semg-pipeline command
+  dataset.md      source, licence, layout, recording protocol
+  figures/        README figure and the script that draws it
 ```
 
 ## Tests
@@ -142,8 +141,8 @@ the counting features, and check that every scale-sensitive model is wrapped wit
 scaler.
 
 ```bash
-python -m pytest -q
-python tests/test_features.py   # without pytest
+pytest -q                       # if pytest is installed
+python tests/test_features.py   # works without it
 ```
 
 ## Data
@@ -162,27 +161,18 @@ ignored.
 - **Eight participants, all healthy adult males, right hand.** Nothing here says
   anything about anyone else.
 - **Position transfer is the failure case**, and the dataset is built to expose it:
-  only the center position is shared between the two days.
+  only the centre position is shared between the two days.
 - **No hyperparameter search.** Defaults throughout, so a tuned model would likely
   beat these numbers and the comparison between models is the point rather than any
   single value.
 - **The report that accompanied this code contains extended tables** that a separate
-  run produced, including a training-time benchmark and a subject-wise normalization
+  run produced, including a training-time benchmark and a subject-wise normalisation
   ladder. Those are not reproduced by `semg.pipeline` and are not in this
   repository.
 
-## Related
-
-- [PPG_Classifier](https://github.com/blueion0612/PPG_Classifier) and
-  [IMU_Gesture_Classifier](https://github.com/blueion0612/IMU_Gesture_Classifier):
-  the same question, hand state from a wrist signal, asked of photoplethysmography
-  and of inertial data. All three keep whole trials or sessions on one side of every
-  split for the same reason.
-
 ## Citation
 
-Cite the dataset and its paper rather than this repository. The repository itself
-is described by `CITATION.cff`, version 1.0.0, if a reference to the code is needed:
+Cite the dataset and its paper, not this repository:
 
 ```bibtex
 @article{kyranou2025great,
@@ -205,4 +195,4 @@ the running and checking of every number were done by the author.
 
 ## License
 
-MIT. See [LICENSE](LICENSE). The dataset carries its own license, CC0 1.0.
+MIT. See [LICENSE](LICENSE). The dataset carries its own licence, CC0 1.0.

@@ -18,8 +18,8 @@ recorded. Specifications below were checked against the source paper, the
 | Arm positions | 9, a 3 by 3 grid at 45 degree offsets around a neutral P5 |
 | Trials | 4,800 grasps: 8 participants x 2 days x 2 blocks x 5 positions x 6 gestures x 5 repetitions |
 | Format | HDF5 for signals, CSV for labels, one folder per participant, day and block |
-| Data licence | CC0 1.0 |
-| Paper licence | CC BY 4.0 |
+| Data license | CC0 1.0 |
+| Paper license | CC BY 4.0 |
 
 ## Source and citation
 
@@ -92,7 +92,7 @@ P5 in elevation and azimuth. Only five are recorded per day, in two configuratio
 - **Con+**, day 1: positions 2, 4, 5, 6, 8
 - **Conx**, day 2: positions 1, 3, 5, 7, 9
 
-Only the centre, P5, is shared, so it holds roughly twice the data of any other
+Only the center, P5, is shared, so it holds roughly twice the data of any other
 position.
 
 **Trials.** One trial is a five second hold of the cued gesture followed by three

@@ -1,0 +1,2 @@
+[console_scripts]
+semg-pipeline = semg.pipeline:main

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semg-gesture-classifier"
+description = "Classical machine learning compared on six-gesture surface electromyography, up to leave-one-subject-out"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Yuhyeon Lee" }]
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = [
+  "numpy>=1.21",
+  "scipy>=1.7",
+  "scikit-learn>=1.0",
+  # read the raw dataset on the first run; later runs load the feature cache
+  "pandas>=1.3",
+  "h5py>=3.0",
+]
+
+[project.urls]
+Repository = "https://github.com/blueion0612/sEMG_Gesture_Classifier"
+Portfolio = "https://blueion0612.github.io"
+
+[project.scripts]
+semg-pipeline = "semg.pipeline:main"
+
+[tool.setuptools]
+packages = ["semg"]
+
+[tool.setuptools.dynamic]
+version = { attr = "semg.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

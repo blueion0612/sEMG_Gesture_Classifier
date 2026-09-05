@@ -171,7 +171,7 @@ def paper_protocol(data):
     return {"within_position": within, "cross_position": cross}
 
 
-# 4) Leave-one-subject-out generalisation
+# 4) Leave-one-subject-out generalization
 def loso(data, cap=5, seed=13):
     """Hold out one participant, train on the rest, test on them. Eight folds.
     Returns accuracy and a confidence interval per model, and the Wilcoxon test

@@ -5,7 +5,7 @@ Reports the class balance, how correlated the channels are with each other,
 whether PCA concentrates the variance in a few axes, and whether KMeans
 separates the gestures without labels, judged by silhouette, the elbow in the
 sum of squares, and agreement with the true labels. The unsupervised parts run
-on standardised rich features."""
+on standardized rich features."""
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
@@ -44,7 +44,7 @@ def run_eda(data, sample_size=40000, seed=42):
     eda["channel_corr_mean_abs"] = round(float(np.mean(np.abs(offdiag))), 3)
     eda["channel_corr_max"] = round(float(np.max(offdiag)), 3)
 
-    # Subsample, standardise, then PCA and KMeans, which keeps this quick
+    # Subsample, standardize, then PCA and KMeans, which keeps this quick
     samp = rng.choice(len(y), min(sample_size, len(y)), replace=False)
     Xs = StandardScaler().fit_transform(Xr[samp])
     ys = y[samp]

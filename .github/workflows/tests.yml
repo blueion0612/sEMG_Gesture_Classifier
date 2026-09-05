@@ -12,14 +12,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: pip install -r requirements.txt pytest
-      - run: pytest -q
+      - run: pip install -e . pytest
+      - name: Unit tests
+        run: python -m pytest -q
       - name: The package imports without the dataset present
         run: python -c "import semg.pipeline, semg.evaluation, semg.eda"
+      - name: The console script is installed
+        run: command -v semg-pipeline
